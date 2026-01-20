@@ -23,7 +23,7 @@ from utils.decorators import admin_only, track_activity, error_handler, log_comm
 from handlers.user import (
     start, show_tariffs, show_my_orders, show_order_detail,
     show_about, show_support, show_reviews, show_portfolio,
-    process_user_reply  # Добавлена новая функция для обработки ответов
+    process_user_reply, start_direct_chat, start_order_chat  # Добавлены новые функции для чата
 )
 from handlers.order import (
     start_order, select_tariff, enter_name, enter_description,
@@ -35,7 +35,7 @@ from handlers.admin import (
     admin_change_status_menu, admin_set_status, admin_save_status,
     admin_order_history, admin_users, admin_stats,
     admin_message_start, admin_send_message, show_order_chat,
-    ADMIN_COMMENT, ADMIN_MESSAGE  # Добавлен ADMIN_MESSAGE
+    ADMIN_COMMENT, ADMIN_MESSAGE
 )
 from keyboards import kb
 
@@ -336,7 +336,7 @@ def main():
     # ============= CONVERSATION HANDLERS =============
     application.add_handler(order_conversation)
     application.add_handler(status_conversation)
-    application.add_handler(message_conversation)  # Добавлен новый обработчик
+    application.add_handler(message_conversation)
     
     # ============= CALLBACK HANDLERS - ПОЛЬЗОВАТЕЛИ =============
     application.add_handler(CallbackQueryHandler(start, pattern='^start$'))
@@ -347,6 +347,9 @@ def main():
     application.add_handler(CallbackQueryHandler(show_support, pattern='^support$'))
     application.add_handler(CallbackQueryHandler(show_reviews, pattern='^reviews$'))
     application.add_handler(CallbackQueryHandler(show_portfolio, pattern='^portfolio$'))
+    # Новые обработчики чата
+    application.add_handler(CallbackQueryHandler(start_direct_chat, pattern='^start_chat$'))
+    application.add_handler(CallbackQueryHandler(start_order_chat, pattern='^chat_order_'))
     
     # ============= CALLBACK HANDLERS - АДМИН =============
     application.add_handler(CallbackQueryHandler(admin_panel, pattern='^admin_panel$'))
@@ -355,16 +358,16 @@ def main():
     application.add_handler(CallbackQueryHandler(admin_order_detail, pattern='^admin_order_'))
     application.add_handler(CallbackQueryHandler(admin_change_status_menu, pattern='^admin_status_'))
     application.add_handler(CallbackQueryHandler(admin_order_history, pattern='^admin_history_'))
-    application.add_handler(CallbackQueryHandler(show_order_chat, pattern='^admin_chat_'))  # Добавлен обработчик чата
+    application.add_handler(CallbackQueryHandler(show_order_chat, pattern='^admin_chat_'))
     application.add_handler(CallbackQueryHandler(admin_users, pattern='^admin_users$'))
     application.add_handler(CallbackQueryHandler(admin_stats, pattern='^admin_stats$'))
     
     # ============= ОБРАБОТЧИК ОШИБОК =============
     application.add_error_handler(error_callback)
     
-    # Обработчик для ответов пользователя (должен быть последним!) - ИСПРАВЛЕНО
+    # Обработчик для ответов пользователя (должен быть последним!)
     application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND,  # Убран проблемный фильтр ~filters.EDITED
+        filters.TEXT & ~filters.COMMAND,  # Упрощенный фильтр
         process_user_reply
     ))
     
