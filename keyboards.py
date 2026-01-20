@@ -125,7 +125,8 @@ class Keyboards:
                 InlineKeyboardButton("👥 Пользователи", callback_data='admin_users'),
                 InlineKeyboardButton("📊 Статистика", callback_data='admin_stats')
             ],
-            [InlineKeyboardButton("📢 Рассылка", callback_data='admin_broadcast')],
+            # Убрана строка с рассылкой:
+            # [InlineKeyboardButton("📢 Рассылка", callback_data='admin_broadcast')],
             [InlineKeyboardButton(BUTTONS['back'], callback_data='start')]
         ]
         return InlineKeyboardMarkup(keyboard)
