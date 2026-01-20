@@ -364,9 +364,9 @@ def main():
     
     # Обработчик для ответов пользователя (должен быть последним!)
     application.add_handler(MessageHandler(
-        filters.TEXT & ~filters.COMMAND & ~filters.UPDATE.edited_message,
-        process_user_reply
-    ))
+    filters.TEXT & ~filters.COMMAND & ~filters.EDITED,
+    process_user_reply
+))
     
     # ============= ЗАПУСК =============
     logger.info("✅ Бот успешно запущен!")
