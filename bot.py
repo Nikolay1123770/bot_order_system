@@ -12,6 +12,7 @@ from telegram.ext import (
     ConversationHandler,
     filters
 )
+from datetime import datetime
 
 # Импорты из проекта
 from config import BOT_TOKEN, ADMIN_IDS, ORDER_STATUSES, BUTTONS
@@ -21,7 +22,8 @@ from utils.decorators import admin_only, track_activity, error_handler, log_comm
 # Импорт обработчиков
 from handlers.user import (
     start, show_tariffs, show_my_orders, show_order_detail,
-    show_about, show_support, show_reviews, show_portfolio
+    show_about, show_support, show_reviews, show_portfolio,
+    process_user_reply  # Добавлена новая функция для обработки ответов
 )
 from handlers.order import (
     start_order, select_tariff, enter_name, enter_description,
@@ -32,7 +34,8 @@ from handlers.admin import (
     admin_panel, admin_orders, admin_new_orders, admin_order_detail,
     admin_change_status_menu, admin_set_status, admin_save_status,
     admin_order_history, admin_users, admin_stats,
-    ADMIN_COMMENT
+    admin_message_start, admin_send_message, show_order_chat,
+    ADMIN_COMMENT, ADMIN_MESSAGE  # Добавлен ADMIN_MESSAGE
 )
 from keyboards import kb
 
@@ -304,6 +307,24 @@ def main():
         persistent=False
     )
     
+    # ============= ОБРАБОТЧИК СООБЩЕНИЙ АДМИНА =============
+    message_conversation = ConversationHandler(
+        entry_points=[
+            CallbackQueryHandler(admin_message_start, pattern='^admin_message_')
+        ],
+        states={
+            ADMIN_MESSAGE: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_send_message)
+            ]
+        },
+        fallbacks=[
+            CallbackQueryHandler(admin_panel, pattern='^admin_panel$'),
+            CommandHandler('start', start)
+        ],
+        name="message_conversation",
+        persistent=False
+    )
+    
     # ============= КОМАНДЫ =============
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
@@ -315,6 +336,7 @@ def main():
     # ============= CONVERSATION HANDLERS =============
     application.add_handler(order_conversation)
     application.add_handler(status_conversation)
+    application.add_handler(message_conversation)  # Добавлен новый обработчик
     
     # ============= CALLBACK HANDLERS - ПОЛЬЗОВАТЕЛИ =============
     application.add_handler(CallbackQueryHandler(start, pattern='^start$'))
@@ -333,11 +355,18 @@ def main():
     application.add_handler(CallbackQueryHandler(admin_order_detail, pattern='^admin_order_'))
     application.add_handler(CallbackQueryHandler(admin_change_status_menu, pattern='^admin_status_'))
     application.add_handler(CallbackQueryHandler(admin_order_history, pattern='^admin_history_'))
+    application.add_handler(CallbackQueryHandler(show_order_chat, pattern='^admin_chat_'))  # Добавлен обработчик чата
     application.add_handler(CallbackQueryHandler(admin_users, pattern='^admin_users$'))
     application.add_handler(CallbackQueryHandler(admin_stats, pattern='^admin_stats$'))
     
     # ============= ОБРАБОТЧИК ОШИБОК =============
     application.add_error_handler(error_callback)
+    
+    # Обработчик для ответов пользователя (должен быть последним!)
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND & ~filters.UPDATE.edited_message,
+        process_user_reply
+    ))
     
     # ============= ЗАПУСК =============
     logger.info("✅ Бот успешно запущен!")
