@@ -362,11 +362,11 @@ def main():
     # ============= ОБРАБОТЧИК ОШИБОК =============
     application.add_error_handler(error_callback)
     
-    # Обработчик для ответов пользователя (должен быть последним!)
+    # Обработчик для ответов пользователя (должен быть последним!) - ИСПРАВЛЕНО
     application.add_handler(MessageHandler(
-    filters.TEXT & ~filters.COMMAND & ~filters.EDITED,
-    process_user_reply
-))
+        filters.TEXT & ~filters.COMMAND,  # Убран проблемный фильтр ~filters.EDITED
+        process_user_reply
+    ))
     
     # ============= ЗАПУСК =============
     logger.info("✅ Бот успешно запущен!")
