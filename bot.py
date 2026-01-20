@@ -32,8 +32,7 @@ from handlers.admin import (
     admin_panel, admin_orders, admin_new_orders, admin_order_detail,
     admin_change_status_menu, admin_set_status, admin_save_status,
     admin_order_history, admin_users, admin_stats,
-    admin_broadcast_start, admin_broadcast_send,
-    ADMIN_COMMENT, ADMIN_BROADCAST_TEXT
+    ADMIN_COMMENT
 )
 from keyboards import kb
 
@@ -305,23 +304,6 @@ def main():
         persistent=False
     )
     
-    # ============= ОБРАБОТЧИК РАССЫЛКИ =============
-    broadcast_conversation = ConversationHandler(
-        entry_points=[
-            CallbackQueryHandler(admin_broadcast_start, pattern='^admin_broadcast$')
-        ],
-        states={
-            ADMIN_BROADCAST_TEXT: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, admin_broadcast_send)
-            ]
-        },
-        fallbacks=[
-            CallbackQueryHandler(admin_panel, pattern='^admin_panel$')
-        ],
-        name="broadcast_conversation",
-        persistent=False
-    )
-    
     # ============= КОМАНДЫ =============
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
@@ -333,7 +315,6 @@ def main():
     # ============= CONVERSATION HANDLERS =============
     application.add_handler(order_conversation)
     application.add_handler(status_conversation)
-    application.add_handler(broadcast_conversation)
     
     # ============= CALLBACK HANDLERS - ПОЛЬЗОВАТЕЛИ =============
     application.add_handler(CallbackQueryHandler(start, pattern='^start$'))
