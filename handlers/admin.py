@@ -2,13 +2,14 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes, ConversationHandler
 from database import db
 from keyboards import kb
-from config import ORDER_STATUSES, ITEMS_PER_PAGE
+from config import ORDER_STATUSES, ITEMS_PER_PAGE, ADMIN_IDS
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
 # Состояния для админа
-ADMIN_COMMENT = 0
+ADMIN_COMMENT, ADMIN_MESSAGE = range(2)
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Главная админ-панель"""
@@ -411,6 +412,178 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "◀️ Назад",
         callback_data='admin_panel'
     )]]
+    
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='HTML'
+    )
+
+# Новые функции для работы с сообщениями
+
+async def admin_message_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Начало отправки сообщения пользователю"""
+    query = update.callback_query
+    await query.answer()
+    
+    # Парсим данные: admin_message_ORDER_ID
+    order_id = int(query.data.split('_')[2])
+    order = db.get_order(order_id)
+    
+    if not order:
+        await query.edit_message_text("❌ Заказ не найден")
+        return ConversationHandler.END
+    
+    # Сохраняем ID заказа и пользователя в контексте
+    context.user_data['chat_with'] = {
+        'order_id': order_id,
+        'user_id': order['user_id']
+    }
+    
+    # Получаем историю сообщений
+    messages = db.get_order_messages(order_id)
+    
+    text = (
+        f"💬 <b>Чат с клиентом</b>\n\n"
+        f"Заказ: <b>#{order['order_number']}</b>\n"
+        f"Клиент: {order['name']}\n\n"
+    )
+    
+    if messages:
+        text += "<b>История сообщений:</b>\n\n"
+        # Показываем последние 5 сообщений в обратном порядке (новые внизу)
+        for msg in reversed(messages[:5]):
+            sender = "👨‍💼 Вы" if msg['is_admin'] else "👤 Клиент"
+            text += f"{sender} ({msg['created_at'][:16]}):\n{msg['message']}\n\n"
+    else:
+        text += "История сообщений пуста.\n\n"
+    
+    text += "✏️ <b>Напишите ваше сообщение:</b>"
+    
+    await query.edit_message_text(text, parse_mode='HTML')
+    
+    return ADMIN_MESSAGE
+
+async def admin_send_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Отправка сообщения пользователю"""
+    message_text = update.message.text.strip()
+    
+    if not message_text:
+        await update.message.reply_text(
+            "❌ Сообщение не может быть пустым. Попробуйте ещё раз:"
+        )
+        return ADMIN_MESSAGE
+    
+    chat_data = context.user_data.get('chat_with')
+    if not chat_data:
+        await update.message.reply_text(
+            "❌ Ошибка: данные чата не найдены"
+        )
+        return ConversationHandler.END
+    
+    order_id = chat_data['order_id']
+    user_id = chat_data['user_id']
+    admin_id = update.effective_user.id
+    
+    try:
+        order = db.get_order(order_id)
+        if not order:
+            await update.message.reply_text("❌ Заказ не найден")
+            return ConversationHandler.END
+        
+        # Сохраняем сообщение в БД
+        db.add_message(
+            order_id=order_id,
+            user_id=user_id,
+            message=message_text,
+            is_admin=True,
+            admin_id=admin_id
+        )
+        
+        # Отправляем сообщение пользователю
+        user_text = (
+            f"💬 <b>Сообщение от менеджера</b>\n"
+            f"По заказу <b>#{order['order_number']}</b>:\n\n"
+            f"{message_text}\n\n"
+            f"Вы можете ответить на это сообщение."
+        )
+        
+        # Клавиатура для пользователя
+        user_keyboard = [
+            [InlineKeyboardButton("👁 Посмотреть заказ", callback_data=f"view_order_{order_id}")],
+            [InlineKeyboardButton("📦 Все заказы", callback_data="my_orders")]
+        ]
+        
+        # Отправляем пользователю
+        sent_message = await context.bot.send_message(
+            chat_id=user_id,
+            text=user_text,
+            reply_markup=InlineKeyboardMarkup(user_keyboard),
+            parse_mode='HTML'
+        )
+        
+        # Уведомляем админа об успешной отправке
+        admin_text = (
+            f"✅ <b>Сообщение отправлено клиенту</b>\n\n"
+            f"Заказ: <b>#{order['order_number']}</b>\n"
+            f"Клиент получит уведомление и сможет ответить.\n\n"
+            f"Когда клиент ответит, вы получите уведомление."
+        )
+        
+        admin_keyboard = [
+            [InlineKeyboardButton("📋 К заказу", callback_data=f"admin_order_{order_id}")],
+            [InlineKeyboardButton("📨 Написать ещё", callback_data=f"admin_message_{order_id}")]
+        ]
+        
+        await update.message.reply_text(
+            admin_text,
+            reply_markup=InlineKeyboardMarkup(admin_keyboard),
+            parse_mode='HTML'
+        )
+        
+        logger.info(
+            f"Администратор {admin_id} отправил сообщение клиенту {user_id} "
+            f"по заказу #{order['order_number']}"
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка отправки сообщения: {e}")
+        await update.message.reply_text(
+            "❌ Ошибка при отправке сообщения. Попробуйте позже."
+        )
+    
+    context.user_data.clear()
+    return ConversationHandler.END
+
+async def show_order_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Показать историю сообщений по заказу"""
+    query = update.callback_query
+    await query.answer()
+    
+    order_id = int(query.data.split('_')[2])
+    order = db.get_order(order_id)
+    
+    if not order:
+        await query.edit_message_text("❌ Заказ не найден")
+        return
+    
+    messages = db.get_order_messages(order_id)
+    
+    text = (
+        f"💬 <b>Переписка по заказу #{order['order_number']}</b>\n\n"
+    )
+    
+    if not messages:
+        text += "Сообщений пока нет"
+    else:
+        for msg in reversed(messages):
+            sender = "👨‍💼 Менеджер" if msg['is_admin'] else f"👤 {order['name']}"
+            text += f"{sender} ({msg['created_at'][:16]}):\n{msg['message']}\n\n"
+    
+    keyboard = [
+        [InlineKeyboardButton("✏️ Написать", callback_data=f"admin_message_{order_id}")],
+        [InlineKeyboardButton("◀️ Назад", callback_data=f"admin_order_{order_id}")]
+    ]
     
     await query.edit_message_text(
         text,
