@@ -8,7 +8,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 # Состояния для админа
-ADMIN_COMMENT, ADMIN_BROADCAST_TEXT = range(2)
+ADMIN_COMMENT = 0
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Главная админ-панель"""
@@ -244,6 +244,7 @@ async def admin_save_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
         db.update_order_status(order_id, new_status, admin_id, comment)
         
         order = db.get_order(order_id)
+        # Получаем полное название статуса из словаря
         status_name = ORDER_STATUSES.get(new_status, new_status)
         
         # Уведомляем администратора
@@ -268,7 +269,7 @@ async def admin_save_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
         
-        # Уведомляем клиента
+        # Уведомляем клиента - Используем полное название статуса!
         user_text = (
             f"🔔 <b>Обновление заказа #{order['order_number']}</b>\n\n"
             f"Статус изменён: {status_name}\n"
@@ -405,87 +406,14 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for status_key, status_name in ORDER_STATUSES.items():
         count = stats['orders_by_status'].get(status_key, 0)
         text += f"   {status_name}: {count}\n"
-async def admin_save_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Сохранение статуса с комментарием"""
-    comment = update.message.text.strip()
     
-    if comment == '-':
-        comment = None
+    keyboard = [[InlineKeyboardButton(
+        "◀️ Назад",
+        callback_data='admin_panel'
+    )]]
     
-    change_data = context.user_data.get('pending_status_change')
-    
-    if not change_data:
-        await update.message.reply_text("❌ Ошибка: данные не найдены")
-        return ConversationHandler.END
-    
-    order_id = change_data['order_id']
-    new_status = change_data['new_status']
-    admin_id = update.effective_user.id
-    
-    try:
-        # Обновляем статус
-        db.update_order_status(order_id, new_status, admin_id, comment)
-        
-        order = db.get_order(order_id)
-        status_name = ORDER_STATUSES.get(new_status, new_status)
-        
-        # Уведомляем администратора
-        text = (
-            f"✅ Статус заказа #{order['order_number']} "
-            f"изменён на: {status_name}"
-        )
-        
-        keyboard = [
-            [InlineKeyboardButton(
-                "📋 Открыть заказ",
-                callback_data=f'admin_order_{order_id}'
-            )],
-            [InlineKeyboardButton(
-                "◀️ К заказам",
-                callback_data='admin_orders'
-            )]
-        ]
-        
-        await update.message.reply_text(
-            text,
-            reply_markup=InlineKeyboardMarkup(keyboard)
-        )
-        
-        # Уведомляем клиента
-        user_text = (
-            f"🔔 <b>Обновление заказа #{order['order_number']}</b>\n\n"
-            f"Статус изменён: {status_name}\n"
-        )
-        
-        if comment:
-            user_text += f"\n💬 Комментарий:\n{comment}\n"
-        
-        user_text += (
-            f"\n📋 Подробности: /start → Мои заказы"
-        )
-        
-        user_keyboard = [
-            [InlineKeyboardButton(
-                "📦 Мои заказы",
-                callback_data='my_orders'
-            )]
-        ]
-        
-        try:
-            await context.bot.send_message(
-                chat_id=order['user_id'],
-                text=user_text,
-                reply_markup=InlineKeyboardMarkup(user_keyboard),
-                parse_mode='HTML'
-            )
-        except Exception as e:
-            logger.error(f"Ошибка уведомления клиента: {e}")
-        
-    except Exception as e:
-        logger.error(f"Ошибка изменения статуса: {e}")
-        await update.message.reply_text(
-            "❌ Ошибка при изменении статуса"
-        )
-    
-    context.user_data.clear()
-    return ConversationHandler.END
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='HTML'
+    )
