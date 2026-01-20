@@ -46,25 +46,61 @@ class Keyboards:
     def tariff_selection():
         """Выбор тарифа"""
         keyboard = []
-        for key, tariff in TARIFFS.items():
+        
+        # Боты
+        keyboard.append([InlineKeyboardButton(
+            "🤖 TELEGRAM БОТЫ",
+            callback_data='category_bots'
+        )])
+        
+        for key in ['bot_simple', 'bot_medium', 'bot_complex']:
+            tariff = TARIFFS[key]
+            button_text = f"{tariff['name'].split('-')[1].strip()} - {tariff['price_text']}"
             keyboard.append([InlineKeyboardButton(
-                f"{tariff['name']} - {tariff['price_text']}",
+                button_text,
                 callback_data=f'tariff_{key}'
             )])
+        
+        # Сайты
+        keyboard.append([InlineKeyboardButton(
+            "🌐 ВЕБ-САЙТЫ",
+            callback_data='category_websites'
+        )])
+        
+        tariff = TARIFFS['website']
+        keyboard.append([InlineKeyboardButton(
+            f"Любой сайт - {tariff['price_text']}",
+            callback_data='tariff_website'
+        )])
+        
+        # Дополнительно
+        keyboard.append([InlineKeyboardButton(
+            "🔌 API Интеграция - от 500 ₽",
+            callback_data='tariff_api_integration'
+        )])
+        
+        # Индивидуальный
+        tariff = TARIFFS['custom']
+        keyboard.append([InlineKeyboardButton(
+            f"{tariff['name']}",
+            callback_data='tariff_custom'
+        )])
+        
         keyboard.append([InlineKeyboardButton(
             BUTTONS['back'], 
             callback_data='start'
         )])
+        
         return InlineKeyboardMarkup(keyboard)
     
     @staticmethod
     def budget_selection():
         """Выбор бюджета"""
         keyboard = [
-            [InlineKeyboardButton("До 5,000 ₽", callback_data='budget_5000')],
-            [InlineKeyboardButton("5,000 - 15,000 ₽", callback_data='budget_15000')],
-            [InlineKeyboardButton("15,000 - 30,000 ₽", callback_data='budget_30000')],
-            [InlineKeyboardButton("30,000+ ₽", callback_data='budget_30000plus')],
+            [InlineKeyboardButton("До 1,500 ₽", callback_data='budget_1500')],
+            [InlineKeyboardButton("1,500 - 2,500 ₽", callback_data='budget_2500')],
+            [InlineKeyboardButton("2,500 - 5,000 ₽", callback_data='budget_5000')],
+            [InlineKeyboardButton("5,000+ ₽", callback_data='budget_5000plus')],
             [InlineKeyboardButton("Не определился", callback_data='budget_unknown')]
         ]
         return InlineKeyboardMarkup(keyboard)
