@@ -360,23 +360,37 @@ async def show_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def process_user_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Обработка ответа пользователя на сообщение администратора"""
+    """Обработка сообщений пользователя"""
     message_text = update.message.text.strip()
     user_id = update.effective_user.id
     
-    # Проверяем, есть ли активные заказы у пользователя
-    user_orders = db.get_user_orders(user_id)
+    # Проверяем, инициирован ли чат
+    active_chat = context.user_data.get('active_chat')
     
-    if not user_orders:
-        # Если нет заказов, считаем это обычным сообщением
-        await update.message.reply_text(
-            "Чтобы заказать бота, нажмите /start и выберите «🛒 Заказать»"
-        )
-        return
-    
-    # Берем самый свежий заказ для ответа
-    latest_order = user_orders[0]
-    order_id = latest_order['id']
+    if active_chat and active_chat.get('initiated'):
+        # Если чат инициирован через кнопку, используем сохраненный order_id
+        order_id = active_chat['order_id']
+        order = db.get_order(order_id)
+        
+        if not order:
+            await update.message.reply_text("❌ Заказ не найден. Пожалуйста, создайте новый.")
+            context.user_data.pop('active_chat', None)
+            return
+    else:
+        # Проверяем, есть ли активные заказы у пользователя
+        user_orders = db.get_user_orders(user_id)
+        
+        if not user_orders:
+            # Если нет заказов, считаем это обычным сообщением
+            await update.message.reply_text(
+                "Для начала общения с менеджером, пожалуйста, создайте заказ:\n\n"
+                "/start → 🛒 Заказать"
+            )
+            return
+        
+        # Берем самый свежий заказ для ответа
+        order = user_orders[0]
+        order_id = order['id']
     
     try:
         # Сохраняем сообщение в БД
@@ -390,7 +404,7 @@ async def process_user_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Уведомляем пользователя о принятии сообщения
         reply_text = (
             "✅ <b>Сообщение отправлено</b>\n\n"
-            f"Ваше сообщение по заказу #{latest_order['order_number']} "
+            f"Ваше сообщение по заказу #{order['order_number']} "
             "получено и будет передано менеджеру. "
             "Он ответит вам в ближайшее время."
         )
@@ -409,8 +423,8 @@ async def process_user_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
         # Уведомляем всех админов
         admin_text = (
             f"📨 <b>НОВОЕ СООБЩЕНИЕ ОТ КЛИЕНТА</b>\n\n"
-            f"👤 <b>Клиент:</b> {latest_order['name']}\n"
-            f"📋 <b>Заказ:</b> #{latest_order['order_number']}\n"
+            f"👤 <b>Клиент:</b> {order['name']}\n"
+            f"📋 <b>Заказ:</b> #{order['order_number']}\n"
             f"💬 <b>Сообщение:</b>\n\n"
             f"{message_text}\n\n"
             f"Отправлено: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
@@ -434,11 +448,135 @@ async def process_user_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 logger.error(f"Ошибка уведомления админа {admin_id}: {e}")
         
         logger.info(
-            f"Пользователь {user_id} отправил сообщение по заказу #{latest_order['order_number']}"
+            f"Пользователь {user_id} отправил сообщение по заказу #{order['order_number']}"
         )
         
     except Exception as e:
-        logger.error(f"Ошибка обработки ответа пользователя: {e}")
+        logger.error(f"Ошибка обработки сообщения пользователя: {e}")
         await update.message.reply_text(
             "❌ Произошла ошибка при обработке сообщения. Попробуйте позже."
         )
+
+async def start_direct_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Начало прямого чата с менеджером (без привязки к заказу)"""
+    query = update.callback_query
+    await query.answer()
+    
+    user = update.effective_user
+    
+    # Проверяем, есть ли у пользователя заказы
+    user_orders = db.get_user_orders(user.id)
+    
+    if not user_orders:
+        # У пользователя нет заказов, предлагаем создать
+        text = (
+            "💬 <b>Чат с менеджером</b>\n\n"
+            "Чтобы начать чат с менеджером, пожалуйста, "
+            "сначала создайте заказ. Это поможет нам лучше "
+            "понять ваши потребности.\n\n"
+            "Вы можете создать заказ, нажав на кнопку ниже:"
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("🛒 Создать заказ", callback_data='order')],
+            [InlineKeyboardButton("◀️ Назад", callback_data='start')]
+        ]
+        
+        await query.edit_message_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='HTML'
+        )
+        return
+    
+    # Берем последний заказ пользователя
+    latest_order = user_orders[0]
+    order_id = latest_order['id']
+    
+    # Сохраняем ID заказа в контексте
+    context.user_data['active_chat'] = {
+        'order_id': order_id,
+        'initiated': True
+    }
+    
+    # Получаем историю сообщений
+    messages = db.get_order_messages(order_id)
+    
+    text = (
+        f"💬 <b>Чат с менеджером</b>\n\n"
+        f"Вы можете написать сообщение по вашему заказу "
+        f"<b>#{latest_order['order_number']}</b>\n\n"
+    )
+    
+    if messages:
+        text += "<b>Последние сообщения:</b>\n\n"
+        # Показываем последние 3 сообщения в обратном порядке
+        for msg in reversed(messages[:3]):
+            sender = "👨‍💼 Менеджер" if msg['is_admin'] else "👤 Вы"
+            text += f"{sender} ({msg['created_at'][:16]}):\n{msg['message']}\n\n"
+    
+    text += (
+        "Просто отправьте сообщение, и наш менеджер "
+        "получит его и ответит вам в ближайшее время."
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton("👁 Открыть заказ", callback_data=f"view_order_{order_id}")],
+        [InlineKeyboardButton("◀️ Назад", callback_data="start")]
+    ]
+    
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='HTML'
+    )
+
+async def start_order_chat(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Начало чата по конкретному заказу"""
+    query = update.callback_query
+    await query.answer()
+    
+    # Получаем ID заказа из callback_data: chat_order_ORDER_ID
+    order_id = int(query.data.split('_')[2])
+    order = db.get_order(order_id)
+    
+    if not order:
+        await query.edit_message_text("❌ Заказ не найден")
+        return
+    
+    # Сохраняем ID заказа в контексте
+    context.user_data['active_chat'] = {
+        'order_id': order_id,
+        'initiated': True
+    }
+    
+    # Получаем историю сообщений
+    messages = db.get_order_messages(order_id)
+    
+    text = (
+        f"💬 <b>Чат по заказу #{order['order_number']}</b>\n\n"
+        f"Здесь вы можете обсудить детали заказа с менеджером.\n\n"
+    )
+    
+    if messages:
+        text += "<b>История сообщений:</b>\n\n"
+        # Показываем последние 3 сообщения в обратном порядке
+        for msg in reversed(messages[:3]):
+            sender = "👨‍💼 Менеджер" if msg['is_admin'] else "👤 Вы"
+            text += f"{sender} ({msg['created_at'][:16]}):\n{msg['message']}\n\n"
+    
+    text += (
+        "Просто отправьте сообщение, и наш менеджер "
+        "получит его и ответит вам в ближайшее время."
+    )
+    
+    keyboard = [
+        [InlineKeyboardButton("📋 Детали заказа", callback_data=f"view_order_{order_id}")],
+        [InlineKeyboardButton("◀️ К заказам", callback_data="my_orders")]
+    ]
+    
+    await query.edit_message_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='HTML'
+    )
