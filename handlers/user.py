@@ -1,9 +1,10 @@
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from database import db
 from keyboards import kb
-from config import TARIFFS, BUTTONS
+from config import TARIFFS, BUTTONS, ORDER_STATUSES, ADMIN_IDS
 import logging
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -106,7 +107,6 @@ async def show_tariffs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📞 Для заказа нажмите кнопку ниже"
     )
     
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     keyboard = [
         [InlineKeyboardButton(BUTTONS['order'], callback_data='order')],
         [InlineKeyboardButton(BUTTONS['back'], callback_data='start')]
@@ -132,15 +132,12 @@ async def show_my_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "У вас пока нет заказов.\n\n"
             "Создайте первый заказ, чтобы начать работу с нами!"
         )
-        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
         keyboard = [
             [InlineKeyboardButton(BUTTONS['order'], callback_data='order')],
             [InlineKeyboardButton(BUTTONS['back'], callback_data='start')]
         ]
     else:
         text = f"📦 <b>Ваши заказы ({len(orders)}):</b>\n\n"
-        
-        from config import ORDER_STATUSES
         
         for order in orders[:10]:  # Показываем последние 10
             status = ORDER_STATUSES.get(order['status'], order['status'])
@@ -151,7 +148,6 @@ async def show_my_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"   Дата: {order['created_at'][:10]}\n\n"
             )
         
-        from telegram import InlineKeyboardButton, InlineKeyboardMarkup
         keyboard = []
         for order in orders[:10]:
             keyboard.append([InlineKeyboardButton(
@@ -160,7 +156,6 @@ async def show_my_orders(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )])
         keyboard.append([InlineKeyboardButton(BUTTONS['back'], callback_data='start')])
     
-    from telegram import InlineKeyboardMarkup
     await query.edit_message_text(
         text,
         reply_markup=InlineKeyboardMarkup(keyboard),
@@ -179,7 +174,6 @@ async def show_order_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("❌ Заказ не найден")
         return
     
-    from config import ORDER_STATUSES
     status = ORDER_STATUSES.get(order['status'], order['status'])
     
     text = (
@@ -194,6 +188,19 @@ async def show_order_detail(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if order['admin_comment']:
         text += f"💬 <b>Комментарий:</b>\n{order['admin_comment']}\n\n"
+    
+    # Проверяем, есть ли сообщения
+    messages = db.get_order_messages(order_id)
+    if messages:
+        text += f"💬 <b>Последние сообщения:</b> {len(messages)} шт.\n\n"
+        # Показываем последнее сообщение
+        last_msg = messages[0]
+        sender = "👨‍💼 Менеджер" if last_msg['is_admin'] else "👤 Вы"
+        text += f"{sender} ({last_msg['created_at'][:16]}):\n{last_msg['message'][:100]}"
+        if len(last_msg['message']) > 100:
+            text += "...\n\n"
+        else:
+            text += "\n\n"
     
     await query.edit_message_text(
         text,
@@ -341,7 +348,6 @@ async def show_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "💡 Хотите так же? Жмите «Заказать»!"
     )
     
-    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     keyboard = [
         [InlineKeyboardButton(BUTTONS['order'], callback_data='order')],
         [InlineKeyboardButton(BUTTONS['back'], callback_data='start')]
@@ -352,3 +358,87 @@ async def show_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=InlineKeyboardMarkup(keyboard),
         parse_mode='HTML'
     )
+
+async def process_user_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Обработка ответа пользователя на сообщение администратора"""
+    message_text = update.message.text.strip()
+    user_id = update.effective_user.id
+    
+    # Проверяем, есть ли активные заказы у пользователя
+    user_orders = db.get_user_orders(user_id)
+    
+    if not user_orders:
+        # Если нет заказов, считаем это обычным сообщением
+        await update.message.reply_text(
+            "Чтобы заказать бота, нажмите /start и выберите «🛒 Заказать»"
+        )
+        return
+    
+    # Берем самый свежий заказ для ответа
+    latest_order = user_orders[0]
+    order_id = latest_order['id']
+    
+    try:
+        # Сохраняем сообщение в БД
+        db.add_message(
+            order_id=order_id,
+            user_id=user_id,
+            message=message_text,
+            is_admin=False
+        )
+        
+        # Уведомляем пользователя о принятии сообщения
+        reply_text = (
+            "✅ <b>Сообщение отправлено</b>\n\n"
+            f"Ваше сообщение по заказу #{latest_order['order_number']} "
+            "получено и будет передано менеджеру. "
+            "Он ответит вам в ближайшее время."
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("👁 Посмотреть заказ", callback_data=f"view_order_{order_id}")],
+            [InlineKeyboardButton("📦 Все заказы", callback_data="my_orders")]
+        ]
+        
+        await update.message.reply_text(
+            reply_text,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+            parse_mode='HTML'
+        )
+        
+        # Уведомляем всех админов
+        admin_text = (
+            f"📨 <b>НОВОЕ СООБЩЕНИЕ ОТ КЛИЕНТА</b>\n\n"
+            f"👤 <b>Клиент:</b> {latest_order['name']}\n"
+            f"📋 <b>Заказ:</b> #{latest_order['order_number']}\n"
+            f"💬 <b>Сообщение:</b>\n\n"
+            f"{message_text}\n\n"
+            f"Отправлено: {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+        )
+        
+        admin_keyboard = [
+            [InlineKeyboardButton("✏️ Ответить", callback_data=f"admin_message_{order_id}")],
+            [InlineKeyboardButton("📋 Открыть заказ", callback_data=f"admin_order_{order_id}")]
+        ]
+        
+        # Отправляем всем админам
+        for admin_id in ADMIN_IDS:
+            try:
+                await context.bot.send_message(
+                    chat_id=admin_id,
+                    text=admin_text,
+                    reply_markup=InlineKeyboardMarkup(admin_keyboard),
+                    parse_mode='HTML'
+                )
+            except Exception as e:
+                logger.error(f"Ошибка уведомления админа {admin_id}: {e}")
+        
+        logger.info(
+            f"Пользователь {user_id} отправил сообщение по заказу #{latest_order['order_number']}"
+        )
+        
+    except Exception as e:
+        logger.error(f"Ошибка обработки ответа пользователя: {e}")
+        await update.message.reply_text(
+            "❌ Произошла ошибка при обработке сообщения. Попробуйте позже."
+        )
