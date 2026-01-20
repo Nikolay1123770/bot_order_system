@@ -15,7 +15,7 @@ class Keyboards:
             ],
             [
                 InlineKeyboardButton(BUTTONS['reviews'], callback_data='reviews'),
-                InlineKeyboardButton(BUTTONS['support'], callback_data='support')
+                InlineKeyboardButton("💬 Написать нам", callback_data='start_chat')  # Новая кнопка
             ],
             [InlineKeyboardButton(BUTTONS['about'], callback_data='about')]
         ]
@@ -110,7 +110,7 @@ class Keyboards:
         """Действия с заказом (для пользователя)"""
         keyboard = [
             [InlineKeyboardButton("📝 Оставить отзыв", callback_data=f'review_{order_id}')],
-            [InlineKeyboardButton("💬 Связаться", callback_data='support')],
+            [InlineKeyboardButton("💬 Написать менеджеру", callback_data=f'chat_order_{order_id}')],  # Новая кнопка
             [InlineKeyboardButton(BUTTONS['back'], callback_data='my_orders')]
         ]
         return InlineKeyboardMarkup(keyboard)
@@ -125,8 +125,6 @@ class Keyboards:
                 InlineKeyboardButton("👥 Пользователи", callback_data='admin_users'),
                 InlineKeyboardButton("📊 Статистика", callback_data='admin_stats')
             ],
-            # Убрана строка с рассылкой:
-            # [InlineKeyboardButton("📢 Рассылка", callback_data='admin_broadcast')],
             [InlineKeyboardButton(BUTTONS['back'], callback_data='start')]
         ]
         return InlineKeyboardMarkup(keyboard)
