@@ -3,7 +3,7 @@
 
 import logging
 import sys
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -14,7 +14,7 @@ from telegram.ext import (
 )
 
 # Импорты из проекта
-from config import BOT_TOKEN, ADMIN_IDS
+from config import BOT_TOKEN, ADMIN_IDS, ORDER_STATUSES, BUTTONS
 from database import db
 from utils.decorators import admin_only, track_activity, error_handler, log_command
 
@@ -35,6 +35,7 @@ from handlers.admin import (
     admin_broadcast_start, admin_broadcast_send,
     ADMIN_COMMENT, ADMIN_BROADCAST_TEXT
 )
+from keyboards import kb
 
 # Настройка логирования
 logging.basicConfig(
@@ -126,24 +127,81 @@ async def help_command(update: Update, context):
 @log_command
 async def orders_command(update: Update, context):
     """Команда /orders - быстрый доступ к заказам"""
-    # Имитируем нажатие на кнопку "Мои заказы"
-    update.callback_query = type('obj', (object,), {
-        'answer': lambda: None,
-        'edit_message_text': update.message.reply_text
-    })()
-    await show_my_orders(update, context)
+    user_id = update.effective_user.id
+    orders = db.get_user_orders(user_id)
+    
+    # Используем тот же код, что и в функции show_my_orders, но без callback
+    if not orders:
+        text = (
+            "📦 <b>Ваши заказы</b>\n\n"
+            "У вас пока нет заказов.\n\n"
+            "Создайте первый заказ, чтобы начать работу с нами!"
+        )
+        keyboard = [
+            [InlineKeyboardButton(BUTTONS['order'], callback_data='order')],
+            [InlineKeyboardButton(BUTTONS['back'], callback_data='start')]
+        ]
+    else:
+        text = f"📦 <b>Ваши заказы ({len(orders)}):</b>\n\n"
+        
+        for order in orders[:10]:  # Показываем последние 10
+            status = ORDER_STATUSES.get(order['status'], order['status'])
+            text += (
+                f"🔹 <b>Заказ #{order['order_number']}</b>\n"
+                f"   Тариф: {order['tariff']}\n"
+                f"   Статус: {status}\n"
+                f"   Дата: {order['created_at'][:10]}\n\n"
+            )
+        
+        keyboard = []
+        for order in orders[:10]:
+            keyboard.append([InlineKeyboardButton(
+                f"#{order['order_number']} - {ORDER_STATUSES.get(order['status'])}",
+                callback_data=f"view_order_{order['id']}"
+            )])
+        keyboard.append([InlineKeyboardButton(BUTTONS['back'], callback_data='start')])
+    
+    await update.message.reply_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode='HTML'
+    )
 
 @admin_only
 @log_command
 async def admin_command(update: Update, context):
     """Команда /admin - быстрый доступ к админке"""
-    update.callback_query = type('obj', (object,), {
-        'answer': lambda: None,
-        'edit_message_text': update.message.reply_text
-    })()
-    await admin_panel(update, context)
+    # Правильная реализация без модификации объекта Update
+    
+    stats = db.get_statistics()
+    
+    text = (
+        "👨‍💼 <b>Панель администратора</b>\n\n"
+        
+        "📊 <b>Статистика:</b>\n"
+        f"👥 Всего пользователей: {stats['total_users']}\n"
+        f"📦 Всего заказов: {stats['total_orders']}\n"
+        f"🆕 Заказов сегодня: {stats['orders_today']}\n"
+        f"👤 Новых за неделю: {stats['new_users_week']}\n\n"
+        
+        "📋 <b>Заказы по статусам:</b>\n"
+    )
+    
+    for status_key, status_name in ORDER_STATUSES.items():
+        count = stats['orders_by_status'].get(status_key, 0)
+        if count > 0:
+            text += f"{status_name}: {count}\n"
+    
+    text += "\nВыберите действие:"
+    
+    await update.message.reply_text(
+        text,
+        reply_markup=kb.admin_panel(),
+        parse_mode='HTML'
+    )
 
 @admin_only
+@log_command
 async def stats_command(update: Update, context):
     """Команда /stats - быстрая статистика"""
     stats = db.get_statistics()
@@ -152,10 +210,34 @@ async def stats_command(update: Update, context):
         "📊 <b>Быстрая статистика</b>\n\n"
         f"👥 Пользователей: {stats['total_users']}\n"
         f"📦 Заказов: {stats['total_orders']}\n"
-        f"🆕 Сегодня: {stats['orders_today']}\n"
+        f"🆕 Сегодня: {stats['orders_today']}\n\n"
+        "📌 Подробнее: /admin → Статистика"
     )
     
     await update.message.reply_text(text, parse_mode='HTML')
+
+@track_activity
+@log_command
+async def support_command(update: Update, context):
+    """Команда /support - быстрый доступ к поддержке"""
+    text = (
+        "<b>💬 Служба поддержки</b>\n\n"
+        "Мы всегда на связи! Выберите удобный способ:\n\n"
+        "📱 <b>Telegram:</b> @botfactory_support\n"
+        "📧 <b>Email:</b> support@botfactory.ru\n\n"
+        "⏰ <b>Режим работы:</b>\n"
+        "Пн-Пт: 9:00 - 21:00 (МСК)\n"
+        "Сб-Вс: 10:00 - 18:00 (МСК)\n\n"
+        "⚡ Среднее время ответа: 15 минут\n"
+        "🎯 В нерабочее время отвечаем до 2 часов\n\n"
+        "💡 <b>Совет:</b> Для быстрого ответа пишите в Telegram"
+    )
+    
+    await update.message.reply_text(
+        text,
+        reply_markup=kb.back_button(),
+        parse_mode='HTML'
+    )
 
 # ============= НАСТРОЙКА БОТА =============
 
@@ -246,6 +328,7 @@ def main():
     application.add_handler(CommandHandler("orders", orders_command))
     application.add_handler(CommandHandler("admin", admin_command))
     application.add_handler(CommandHandler("stats", stats_command))
+    application.add_handler(CommandHandler("support", support_command))
     
     # ============= CONVERSATION HANDLERS =============
     application.add_handler(order_conversation)
