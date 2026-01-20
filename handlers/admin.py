@@ -405,81 +405,87 @@ async def admin_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for status_key, status_name in ORDER_STATUSES.items():
         count = stats['orders_by_status'].get(status_key, 0)
         text += f"   {status_name}: {count}\n"
+async def admin_save_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Сохранение статуса с комментарием"""
+    comment = update.message.text.strip()
     
-    keyboard = [[InlineKeyboardButton(
-        "◀️ Назад",
-        callback_data='admin_panel'
-    )]]
+    if comment == '-':
+        comment = None
     
-    await query.edit_message_text(
-        text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='HTML'
-    )
-
-async def admin_broadcast_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Начало рассылки"""
-    query = update.callback_query
-    await query.answer()
+    change_data = context.user_data.get('pending_status_change')
     
-    text = (
-        "📢 <b>Массовая рассылка</b>\n\n"
-        "Отправьте сообщение, которое нужно разослать всем пользователям.\n\n"
-        "⚠️ Используйте осторожно!"
-    )
+    if not change_data:
+        await update.message.reply_text("❌ Ошибка: данные не найдены")
+        return ConversationHandler.END
     
-    await query.edit_message_text(text, parse_mode='HTML')
+    order_id = change_data['order_id']
+    new_status = change_data['new_status']
+    admin_id = update.effective_user.id
     
-    return ADMIN_BROADCAST_TEXT
-
-async def admin_broadcast_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Отправка рассылки"""
-    message_text = update.message.text_html
-    users = db.get_all_users()
-    
-    success = 0
-    failed = 0
-    
-    status_msg = await update.message.reply_text(
-        f"📤 Начинаю рассылку для {len(users)} пользователей..."
-    )
-    
-    for user in users:
+    try:
+        # Обновляем статус
+        db.update_order_status(order_id, new_status, admin_id, comment)
+        
+        order = db.get_order(order_id)
+        status_name = ORDER_STATUSES.get(new_status, new_status)
+        
+        # Уведомляем администратора
+        text = (
+            f"✅ Статус заказа #{order['order_number']} "
+            f"изменён на: {status_name}"
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton(
+                "📋 Открыть заказ",
+                callback_data=f'admin_order_{order_id}'
+            )],
+            [InlineKeyboardButton(
+                "◀️ К заказам",
+                callback_data='admin_orders'
+            )]
+        ]
+        
+        await update.message.reply_text(
+            text,
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+        
+        # Уведомляем клиента
+        user_text = (
+            f"🔔 <b>Обновление заказа #{order['order_number']}</b>\n\n"
+            f"Статус изменён: {status_name}\n"
+        )
+        
+        if comment:
+            user_text += f"\n💬 Комментарий:\n{comment}\n"
+        
+        user_text += (
+            f"\n📋 Подробности: /start → Мои заказы"
+        )
+        
+        user_keyboard = [
+            [InlineKeyboardButton(
+                "📦 Мои заказы",
+                callback_data='my_orders'
+            )]
+        ]
+        
         try:
             await context.bot.send_message(
-                chat_id=user['user_id'],
-                text=message_text,
+                chat_id=order['user_id'],
+                text=user_text,
+                reply_markup=InlineKeyboardMarkup(user_keyboard),
                 parse_mode='HTML'
             )
-            success += 1
         except Exception as e:
-            logger.error(f"Ошибка отправки {user['user_id']}: {e}")
-            failed += 1
+            logger.error(f"Ошибка уведомления клиента: {e}")
         
-        # Обновляем статус каждые 10 пользователей
-        if (success + failed) % 10 == 0:
-            await status_msg.edit_text(
-                f"📤 Рассылка...\n"
-                f"✅ Успешно: {success}\n"
-                f"❌ Ошибок: {failed}"
-            )
+    except Exception as e:
+        logger.error(f"Ошибка изменения статуса: {e}")
+        await update.message.reply_text(
+            "❌ Ошибка при изменении статуса"
+        )
     
-    final_text = (
-        "✅ <b>Рассылка завершена!</b>\n\n"
-        f"📨 Отправлено: {success}\n"
-        f"❌ Ошибок: {failed}\n"
-        f"👥 Всего: {len(users)}"
-    )
-    
-    keyboard = [[InlineKeyboardButton(
-        "◀️ В админ-панель",
-        callback_data='admin_panel'
-    )]]
-    
-    await status_msg.edit_text(
-        final_text,
-        reply_markup=InlineKeyboardMarkup(keyboard),
-        parse_mode='HTML'
-    )
-    
+    context.user_data.clear()
     return ConversationHandler.END
