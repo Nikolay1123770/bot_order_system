@@ -89,6 +89,21 @@ class Database:
             )
         ''')
         
+        # Таблица сообщений
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS messages (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                order_id INTEGER,
+                user_id INTEGER,
+                is_admin INTEGER DEFAULT 0,
+                admin_id INTEGER,
+                message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (order_id) REFERENCES orders(id),
+                FOREIGN KEY (user_id) REFERENCES users(user_id)
+            )
+        ''')
+        
         conn.commit()
         conn.close()
     
@@ -276,6 +291,62 @@ class Database:
         conn.close()
         
         return [dict(row) for row in rows]
+    
+    # ========== СООБЩЕНИЯ ==========
+    
+    def add_message(self, order_id: int, user_id: int, message: str, 
+                is_admin: bool = False, admin_id: int = None):
+        """Добавить сообщение"""
+        conn = self.get_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            INSERT INTO messages 
+            (order_id, user_id, message, is_admin, admin_id)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (order_id, user_id, message, 1 if is_admin else 0, admin_id))
+        
+        message_id = cursor.lastrowid
+        conn.commit()
+        conn.close()
+        
+        return message_id
+
+    def get_order_messages(self, order_id: int, limit: int = 20):
+        """Получить сообщения по заказу"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM messages
+            WHERE order_id = ?
+            ORDER BY created_at DESC
+            LIMIT ?
+        ''', (order_id, limit))
+        
+        rows = cursor.fetchall()
+        conn.close()
+        
+        return [dict(row) for row in rows]
+
+    def get_last_message(self, order_id: int):
+        """Получить последнее сообщение по заказу"""
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT * FROM messages
+            WHERE order_id = ?
+            ORDER BY created_at DESC
+            LIMIT 1
+        ''', (order_id,))
+        
+        row = cursor.fetchone()
+        conn.close()
+        
+        return dict(row) if row else None
     
     # ========== СТАТИСТИКА ==========
     
