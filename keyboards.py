@@ -137,8 +137,9 @@ class Keyboards:
         keyboard = [
             [InlineKeyboardButton("✏️ Изменить статус", callback_data=f'admin_status_{order_id}')],
             [InlineKeyboardButton("💬 Написать клиенту", callback_data=f'admin_message_{order_id}')],
-            [InlineKeyboardButton("📜 История", callback_data=f'admin_history_{order_id}')],
-            [InlineKeyboardButton(BUTTONS['back'], callback_data='admin_orders')]
+            [InlineKeyboardButton("📜 История чата", callback_data=f'admin_chat_{order_id}')],
+            [InlineKeyboardButton("📋 История статусов", callback_data=f'admin_history_{order_id}')],
+            [InlineKeyboardButton("◀️ К заказам", callback_data='admin_orders')]
         ]
         return InlineKeyboardMarkup(keyboard)
     
