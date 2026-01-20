@@ -1,0 +1,154 @@
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from config import BUTTONS, ORDER_STATUSES, TARIFFS
+
+class Keyboards:
+    
+    @staticmethod
+    def main_menu(is_admin=False):
+        """Главное меню"""
+        keyboard = [
+            [InlineKeyboardButton(BUTTONS['order'], callback_data='order')],
+            [InlineKeyboardButton(BUTTONS['my_orders'], callback_data='my_orders')],
+            [
+                InlineKeyboardButton(BUTTONS['tariffs'], callback_data='tariffs'),
+                InlineKeyboardButton(BUTTONS['portfolio'], callback_data='portfolio')
+            ],
+            [
+                InlineKeyboardButton(BUTTONS['reviews'], callback_data='reviews'),
+                InlineKeyboardButton(BUTTONS['support'], callback_data='support')
+            ],
+            [InlineKeyboardButton(BUTTONS['about'], callback_data='about')]
+        ]
+        
+        if is_admin:
+            keyboard.append([InlineKeyboardButton(
+                BUTTONS['admin'], 
+                callback_data='admin_panel'
+            )])
+        
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def back_button():
+        """Кнопка назад"""
+        return InlineKeyboardMarkup([[
+            InlineKeyboardButton(BUTTONS['back'], callback_data='start')
+        ]])
+    
+    @staticmethod
+    def cancel_button():
+        """Кнопка отмены"""
+        return InlineKeyboardMarkup([[
+            InlineKeyboardButton(BUTTONS['cancel'], callback_data='cancel_order')
+        ]])
+    
+    @staticmethod
+    def tariff_selection():
+        """Выбор тарифа"""
+        keyboard = []
+        for key, tariff in TARIFFS.items():
+            keyboard.append([InlineKeyboardButton(
+                f"{tariff['name']} - {tariff['price_text']}",
+                callback_data=f'tariff_{key}'
+            )])
+        keyboard.append([InlineKeyboardButton(
+            BUTTONS['back'], 
+            callback_data='start'
+        )])
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def budget_selection():
+        """Выбор бюджета"""
+        keyboard = [
+            [InlineKeyboardButton("До 5,000 ₽", callback_data='budget_5000')],
+            [InlineKeyboardButton("5,000 - 15,000 ₽", callback_data='budget_15000')],
+            [InlineKeyboardButton("15,000 - 30,000 ₽", callback_data='budget_30000')],
+            [InlineKeyboardButton("30,000+ ₽", callback_data='budget_30000plus')],
+            [InlineKeyboardButton("Не определился", callback_data='budget_unknown')]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def order_actions(order_id):
+        """Действия с заказом (для пользователя)"""
+        keyboard = [
+            [InlineKeyboardButton("📝 Оставить отзыв", callback_data=f'review_{order_id}')],
+            [InlineKeyboardButton("💬 Связаться", callback_data='support')],
+            [InlineKeyboardButton(BUTTONS['back'], callback_data='my_orders')]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def admin_panel():
+        """Админ-панель"""
+        keyboard = [
+            [InlineKeyboardButton("📋 Все заказы", callback_data='admin_orders')],
+            [InlineKeyboardButton("🆕 Новые заказы", callback_data='admin_new_orders')],
+            [
+                InlineKeyboardButton("👥 Пользователи", callback_data='admin_users'),
+                InlineKeyboardButton("📊 Статистика", callback_data='admin_stats')
+            ],
+            [InlineKeyboardButton("📢 Рассылка", callback_data='admin_broadcast')],
+            [InlineKeyboardButton(BUTTONS['back'], callback_data='start')]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def admin_order_actions(order_id):
+        """Действия с заказом (для админа)"""
+        keyboard = [
+            [InlineKeyboardButton("✏️ Изменить статус", callback_data=f'admin_status_{order_id}')],
+            [InlineKeyboardButton("💬 Написать клиенту", callback_data=f'admin_message_{order_id}')],
+            [InlineKeyboardButton("📜 История", callback_data=f'admin_history_{order_id}')],
+            [InlineKeyboardButton(BUTTONS['back'], callback_data='admin_orders')]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def status_selection(order_id):
+        """Выбор статуса заказа"""
+        keyboard = []
+        for status_key, status_name in ORDER_STATUSES.items():
+            keyboard.append([InlineKeyboardButton(
+                status_name,
+                callback_data=f'setstatus_{order_id}_{status_key}'
+            )])
+        keyboard.append([InlineKeyboardButton(
+            BUTTONS['back'],
+            callback_data=f'admin_order_{order_id}'
+        )])
+        return InlineKeyboardMarkup(keyboard)
+    
+    @staticmethod
+    def pagination(current_page, total_pages, callback_prefix):
+        """Пагинация"""
+        keyboard = []
+        buttons = []
+        
+        if current_page > 0:
+            buttons.append(InlineKeyboardButton(
+                "⬅️ Назад",
+                callback_data=f'{callback_prefix}_{current_page - 1}'
+            ))
+        
+        buttons.append(InlineKeyboardButton(
+            f"{current_page + 1}/{total_pages}",
+            callback_data='page_info'
+        ))
+        
+        if current_page < total_pages - 1:
+            buttons.append(InlineKeyboardButton(
+                "Вперёд ➡️",
+                callback_data=f'{callback_prefix}_{current_page + 1}'
+            ))
+        
+        keyboard.append(buttons)
+        keyboard.append([InlineKeyboardButton(
+            BUTTONS['back'],
+            callback_data='start'
+        )])
+        
+        return InlineKeyboardMarkup(keyboard)
+
+kb = Keyboards()
